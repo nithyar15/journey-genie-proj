@@ -15,7 +15,7 @@ def generate_qa_prompt(template: str, system: str, question: str) -> str:
     return prompt
 
 
-def generate_ctx_prompt(template: str, system: str, question: str, context: str = "") -> str:
+def generate_ctx_prompt(template: str, system: str, question: str, context: str = "", intents: str = "", entities: str = "") -> str:
     """
     Generates a prompt for a context-aware question-answer task.
 
@@ -24,17 +24,19 @@ def generate_ctx_prompt(template: str, system: str, question: str, context: str 
         system (str): The name or identifier of the system related to the question.
         question (str): The question to be included in the prompt.
         context (str, optional): Additional context information. Defaults to "".
+        intents (str, optional): intent information.
+        entities (str, optional): entities information.
 
     Returns:
         str: The generated prompt.
     """
 
-    prompt = template.format(system=system, context=context, question=question)
+    prompt = template.format(system=system, context=context, question=question, intents=intents, entities=entities)
     return prompt
 
 
 def generate_refined_ctx_prompt(
-    template: str, system: str, question: str, existing_answer: str, context: str = ""
+    template: str, system: str, question: str, existing_answer: str, context: str = "", intents: str = "", entities: str = ""
 ) -> str:
     """
     Generates a prompt for a refined context-aware question-answer task.
@@ -45,6 +47,8 @@ def generate_refined_ctx_prompt(
         question (str): The question to be included in the prompt.
         existing_answer (str): The existing answer associated with the question.
         context (str, optional): Additional context information. Defaults to "".
+        intents (str, optional): intent information.
+        entities (str, optional): entities information.
 
     Returns:
         str: The generated prompt.
@@ -55,6 +59,8 @@ def generate_refined_ctx_prompt(
         context=context,
         existing_answer=existing_answer,
         question=question,
+        intents=intents, 
+        entities=entities
     )
     return prompt
 

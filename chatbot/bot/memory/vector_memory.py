@@ -97,7 +97,7 @@ class VectorMemory:
 
     @staticmethod
     def create_memory_index(embedding: Any, chunks: List, vector_store_path: str):
-        texts = [clean(doc.page_content, no_emoji=True) for doc in chunks]
+        texts = [clean(doc.page_content) for doc in chunks]
         metadatas = [doc.metadata for doc in chunks]
         memory_index = Chroma.from_texts(
             texts=texts,

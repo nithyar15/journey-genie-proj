@@ -7,8 +7,15 @@ import streamlit as st
 from bot.client.client_settings import get_client, get_clients
 from bot.client.llm_client import LlmClient
 from bot.conversation.conversation_retrieval import ConversationRetrieval
+from bot.memory.vector_memory import VectorMemory
 from bot.model.model_settings import get_model_setting, get_models
 from helpers.log import get_logger
+from bot.memory.embedder import EmbedderHuggingFace
+from helpers.prettier import prettify_source
+
+from intent import predict_intent
+from ner import prediction
+from multiquery import gen_subqueries
 
 logger = get_logger(__name__)
 
@@ -33,7 +40,7 @@ def load_conversational_retrieval(_llm: LlmClient) -> ConversationRetrieval:
 
 
 def init_page(root_folder: Path) -> None:
-    st.set_page_config(page_title="Chatbot", page_icon="💬", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="JourneyGenie", page_icon="💬", initial_sidebar_state="collapsed")
 
     left_column, central_column, right_column = st.columns([2, 1, 2])
 
@@ -41,7 +48,7 @@ def init_page(root_folder: Path) -> None:
         st.write(" ")
 
     with central_column:
-        st.image(str(root_folder / "images/bot-small.png"), use_column_width="auto")
+        st.image(str(root_folder / "images/bot-new.jpg"), use_column_width="auto")
         st.markdown("""<h4 style='text-align: center; color: grey;'></h4>""", unsafe_allow_html=True)
 
     with right_column:
@@ -53,7 +60,25 @@ def init_page(root_folder: Path) -> None:
 @st.cache_resource
 def init_welcome_message() -> None:
     with st.chat_message("assistant"):
-        st.write("How can I help you today?")
+        st.write("How can JourneyGenie help you today?")
+
+
+@st.cache_resource()
+def load_index(vector_store_path: Path) -> VectorMemory:
+    """
+    Loads a Vector Memory index based on the specified vector store path.
+
+    Args:
+        vector_store_path (Path): The path to the vector store.
+
+    Returns:
+        VectorMemory: An instance of the VectorMemory class with the loaded index.
+    """
+    embedding = EmbedderHuggingFace().get_embedding()
+    index = VectorMemory(vector_store_path=str(vector_store_path), embedding=embedding)
+
+    return index
+
 
 
 def init_chat_history(conversational_retrieval: ConversationRetrieval) -> None:
@@ -72,10 +97,16 @@ def display_messages_from_history():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
+def return_intents(intent):
+    return intent
+
+def return_entities(entity):
+    return entity
 
 def main(parameters) -> None:
     root_folder = Path(__file__).resolve().parent.parent
     model_folder = root_folder / "models"
+    vector_store_path = root_folder / "vector_store" / "docs_index"
     Path(model_folder).parent.mkdir(parents=True, exist_ok=True)
 
     client = parameters.client
@@ -85,6 +116,7 @@ def main(parameters) -> None:
     init_page(root_folder)
     llm = load_llm(client, model, model_folder)
     conversational_retrieval = load_conversational_retrieval(_llm=llm)
+    index = load_index(vector_store_path)
     init_chat_history(conversational_retrieval)
     init_welcome_message()
     display_messages_from_history()
@@ -96,7 +128,37 @@ def main(parameters) -> None:
 
         # Display user message in chat message container
         with st.chat_message("user"):
+            gen_subqueries(user_input)
+            intents = predict_intent(user_input)
+            entities = prediction(user_input)
+            return_intents(intents)
+            return_entities(entities)
             st.markdown(user_input)
+
+        with st.chat_message("assistant"):
+            message_placeholder = st.empty()
+            full_response = ""
+            with st.spinner(
+                text="Refining the question and Retrieving the docs – hang tight! "
+            ):
+                refined_user_input = conversational_retrieval.refine_question(user_input)
+                retrieved_contents, sources = index.similarity_search(query=refined_user_input, k=4)
+                if retrieved_contents:
+                    full_response += "Here are the retrieved text chunks with a content preview: \n\n"
+                    message_placeholder.markdown(full_response)
+
+                    for source in sources:
+                        full_response += prettify_source(source)
+                        full_response += "\n\n"
+                        message_placeholder.markdown(full_response)
+
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+                else:
+                    #full_response = 
+                    full_response += "No relevant context found. \n\n"
+                    message_placeholder.markdown(full_response)
+                    st.session_state.messages.append({"role": "assistant", "content": full_response})
+
 
         # Display assistant response in chat message container
         start_time = time.time()

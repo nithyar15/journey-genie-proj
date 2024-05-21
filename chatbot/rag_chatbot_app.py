@@ -18,6 +18,10 @@ from bot.model.model_settings import get_model_setting, get_models
 from helpers.log import get_logger
 from helpers.prettier import prettify_source
 
+from ner import prediction
+from intent import predict_intent
+from multiquery import gen_subqueries
+
 logger = get_logger(__name__)
 
 
@@ -65,14 +69,14 @@ def init_page(root_folder: Path) -> None:
     """
     Initializes the page configuration for the application.
     """
-    st.set_page_config(page_title="RAG Chatbot", page_icon="💬", initial_sidebar_state="collapsed")
+    st.set_page_config(page_title="Journey Genie", page_icon="💬", initial_sidebar_state="collapsed")
     left_column, central_column, right_column = st.columns([2, 1, 2])
 
     with left_column:
         st.write(" ")
 
     with central_column:
-        st.image(str(root_folder / "images/bot.png"), use_column_width="always")
+        st.image(str(root_folder / "images/bot-new.jpg"), use_column_width="always")
         st.markdown("""<h4 style='text-align: center; color: grey;'></h4>""", unsafe_allow_html=True)
 
     with right_column:
@@ -87,7 +91,7 @@ def init_welcome_message() -> None:
     Initializes a welcome message for the chat interface.
     """
     with st.chat_message("assistant"):
-        st.write("How can I help you today?")
+        st.write("How can JourneyGenie assist you today?")
 
 
 def init_chat_history(conversational_retrieval: ConversationRetrieval) -> None:
@@ -108,6 +112,12 @@ def display_messages_from_history():
         with st.chat_message(message["role"]):
             st.markdown(message["content"])
 
+def return_intents(intent):
+    return intent
+
+def return_entities(entity):
+    return entity
+
 
 def main(parameters) -> None:
     """
@@ -125,6 +135,9 @@ def main(parameters) -> None:
     model_name = parameters.model
     synthesis_strategy_name = parameters.synthesis_strategy
 
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
     init_page(root_folder)
     llm = load_llm_client(client_name, model_folder, model_name)
     conversational_retrieval = load_conversational_retrieval(_llm=llm)
@@ -140,6 +153,11 @@ def main(parameters) -> None:
         st.session_state.messages.append({"role": "user", "content": user_input})
         # Display user message in chat message container
         with st.chat_message("user"):
+            gen_subqueries(user_input)
+            intents = predict_intent(user_input)
+            entities = prediction(user_input)
+            return_entities(entities)
+            return_intents(intents)            
             st.markdown(user_input)
 
         # Display retrieved documents with content previews, and updates the chat interface with the assistant's
@@ -148,7 +166,7 @@ def main(parameters) -> None:
             message_placeholder = st.empty()
             full_response = ""
             with st.spinner(
-                text="Refining the question and Retrieving the docs – hang tight! " "This should take seconds."
+                text="Refining the question and Retrieving the docs – hang tight! "
             ):
                 refined_user_input = conversational_retrieval.refine_question(user_input)
                 retrieved_contents, sources = index.similarity_search(query=refined_user_input, k=parameters.k)
@@ -163,9 +181,11 @@ def main(parameters) -> None:
 
                     st.session_state.messages.append({"role": "assistant", "content": full_response})
                 else:
-                    full_response += "I did not detect any pertinent chunk of text from the documents. \n\n"
+                    #full_response = 
+                    full_response += "I'm afraid I can't answer that question. \n\n"
                     message_placeholder.markdown(full_response)
                     st.session_state.messages.append({"role": "assistant", "content": full_response})
+
 
         # Display assistant response in chat message container
         start_time = time.time()
@@ -173,8 +193,7 @@ def main(parameters) -> None:
             message_placeholder = st.empty()
             full_response = ""
             with st.spinner(
-                text="Refining the context and Generating the answer for each text chunk – hang tight! "
-                "This should take 1 minute."
+                text="Refining the context and Generating the answer for each text chunk..."
             ):
                 streamer, fmt_prompts = conversational_retrieval.context_aware_answer(
                     ctx_synthesis_strategy, user_input, retrieved_contents
